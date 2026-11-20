@@ -1,0 +1,14 @@
+{
+  "tenant_id": "acme",
+  "transactions": [
+    {"transaction_id": "t-001", "amount": 42.10, "merchant": "Blue Bottle Coffee", "timestamp": "2026-11-20T09:12:00Z", "customer_id": "cust-17"},
+    {"transaction_id": "t-002", "amount": 38.75, "merchant": "Whole Foods", "timestamp": "2026-11-20T12:40:00Z", "customer_id": "cust-17"},
+    {"transaction_id": "t-003", "amount": 55.00, "merchant": "Shell Gas", "timestamp": "2026-11-20T17:05:00Z", "customer_id": "cust-17"},
+    {"transaction_id": "t-004", "amount": 9500.00, "merchant": "CryptoXchange Ltd", "timestamp": "2026-11-20T03:14:00Z", "customer_id": "cust-17"},
+    {"transaction_id": "t-005", "amount": 1.00, "merchant": "Steam Gift Card", "timestamp": "2026-11-20T02:00:00Z", "customer_id": "cust-42"},
+    {"transaction_id": "t-006", "amount": 1.00, "merchant": "Steam Gift Card", "timestamp": "2026-11-20T02:01:00Z", "customer_id": "cust-42"},
+    {"transaction_id": "t-007", "amount": 1.00, "merchant": "Steam Gift Card", "timestamp": "2026-11-20T02:02:00Z", "customer_id": "cust-42"},
+    {"transaction_id": "t-008", "amount": 499.99, "merchant": "Steam Gift Card", "timestamp": "2026-11-20T02:04:00Z", "customer_id": "cust-42"},
+    {"transaction_id": "t-009", "amount": 1200.00, "merchant": "Delta Air Lines", "timestamp": "2026-11-20T14:30:00Z", "customer_id": "cust-99"}
+  ]
+}

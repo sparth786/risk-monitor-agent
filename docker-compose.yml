@@ -1,0 +1,37 @@
+# Local stack: the agent container (same image as AgentCore) + a mock webhook receiver.
+#
+#   docker compose up --build                     # offline, LLM_PROVIDER=mock (no AWS needed)
+#   LLM_PROVIDER=bedrock docker compose up --build  # real Bedrock, uses your ~/.aws credentials
+services:
+  agent:
+    build:
+      context: .
+      args:
+        AGENT_VERSION: ${AGENT_VERSION:-local}
+    ports:
+      - "8080:8080"
+    environment:
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      BEDROCK_MODEL_ID: ${BEDROCK_MODEL_ID:-us.anthropic.claude-opus-5-5}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_PROFILE: ${AWS_PROFILE:-}
+      TENANTS_CONFIG_PATH: /app/config/tenants.example.json
+      # Local-only relaxations so we can post to http://mock-webhook (private Docker network).
+      ALLOW_INSECURE_WEBHOOKS: "true"
+      ALLOW_PRIVATE_WEBHOOKS: "true"
+      LOG_LEVEL: INFO
+    volumes:
+      - ${HOME}/.aws:/home/agent/.aws:ro
+    depends_on:
+      - mock-webhook
+
+  mock-webhook:
+    image: python:3.12-slim
+    command: ["python", "/srv/server.py"]
+    working_dir: /srv
+    volumes:
+      - ./mock_webhook/server.py:/srv/server.py:ro
+    environment:
+      WEBHOOK_SECRETS: '{"acme": "acme-local-dev-secret-change-me", "globex": "globex-local-dev-secret-change-me"}'
+    ports:
+      - "9000:9000"

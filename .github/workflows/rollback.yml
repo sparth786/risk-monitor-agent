@@ -1,0 +1,44 @@
+# One-click rollback: repoint an AgentCore endpoint to a previous (immutable) runtime version.
+# No rebuild, no redeploy - takes effect in about a minute.
+name: rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      endpoint:
+        description: Endpoint to roll back
+        type: choice
+        options: [prod, staging]
+        default: prod
+      to_version:
+        description: Runtime version to restore (blank = the version prod pointed at before the last promotion)
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.endpoint == 'prod' && 'production' || 'staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install boto3
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Roll back
+        id: rb
+        run: |
+          python scripts/agentcore_deploy.py rollback \
+            --runtime-name "${{ vars.AGENTCORE_RUNTIME_NAME }}" \
+            --endpoint "${{ inputs.endpoint }}" \
+            ${{ inputs.to_version && format('--to-version {0}', inputs.to_version) || '' }}
+      - name: Smoke test restored version
+        run: |
+          python scripts/evaluate.py --target "${{ steps.rb.outputs.runtime_arn }}" --qualifier "${{ inputs.endpoint }}"

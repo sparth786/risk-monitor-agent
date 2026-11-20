@@ -1,0 +1,23 @@
+{
+  "tenants": [
+    {
+      "tenant_id": "acme",
+      "name": "Acme Payments",
+      "webhook_url": "http://mock-webhook:9000/hooks/acme",
+      "webhook_secret": "acme-local-dev-secret-change-me",
+      "prompt_version": "v1",
+      "allowed_prompt_versions": ["v2"],
+      "notify_min_severity": "high",
+      "high_amount_threshold": 5000
+    },
+    {
+      "tenant_id": "globex",
+      "name": "Globex Bank",
+      "webhook_url": "http://mock-webhook:9000/hooks/globex",
+      "webhook_secret": "globex-local-dev-secret-change-me",
+      "prompt_version": "v2",
+      "notify_min_severity": "medium",
+      "high_amount_threshold": 2000
+    }
+  ]
+}
