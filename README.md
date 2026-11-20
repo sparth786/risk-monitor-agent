@@ -214,6 +214,14 @@ Lambda function behind a public HTTPS function URL:
 
 Each tenant's `webhook_url` in the tenant secret is `https://<function-url>/hooks/<tenant_id>`.
 
+- **Sizing.** Give the function 512 MB, which also buys it more CPU. At 128 MB a cold start (loading
+  boto3 plus fetching the secret) took about 5.7 s, which is past the agent's 5 s webhook timeout, so the
+  agent retried. At 512 MB a cold start takes about 1.3 s and a warm call about 2 ms.
+- **Delivery is at least once.** A timeout or a 5xx triggers a retry, so the same alert can arrive more
+  than once. Every attempt carries the same `X-Idempotency-Key`, which is `{request_id}:{sorted txn ids}`.
+  A production consumer should de-duplicate on that key, for example with a DynamoDB conditional put.
+  This demo receiver only logs it.
+
 ## Deploying to AWS
 
 The deployment tooling is ready: `scripts/agentcore_deploy.py`, the IAM templates in
