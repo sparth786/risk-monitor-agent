@@ -158,3 +158,16 @@ def test_eval_scoring_counts_false_positives():
     m = evaluate.score(cases, results)
     assert m["fp"] == 1 and m["precision"] == 0.5 and m["recall"] == 1.0
     assert m["failures"][0]["false_positives"] == ["b"]
+
+
+def test_require_mode_rejects_rules_fallback(monkeypatch):
+    """A gate meant for the LLM must not go green just because the rules fallback scored well."""
+    from app import main
+
+    monkeypatch.setenv("LLM_PROVIDER", "mock")
+    main.set_service(None)
+    try:
+        assert evaluate.main(["--target", "inprocess"]) == 0  # mock mode, no mode requirement
+        assert evaluate.main(["--target", "inprocess", "--require-mode", "llm"]) == 1
+    finally:
+        main.set_service(None)
