@@ -1,0 +1,158 @@
+# Code push -> running deployment.
+#
+#   PR            : lint + unit tests + golden eval (mock) + container smoke test
+#   push to main  : ... then build arm64 image -> ECR (tag = git SHA)
+#                   -> new AgentCore runtime version -> "staging" endpoint
+#                   -> golden eval against staging on REAL Bedrock (precision/recall gate)
+#                   -> manual approval (GitHub environment "production")
+#                   -> move "prod" endpoint to the exact version tested in staging
+#
+# A prompt change (new app/prompts/vN.md + tenant pin) or a config change (env vars in the
+# deploy step / repo variables) takes exactly the same path: each produces a new immutable
+# runtime version; prod only moves after staging evals pass and a human approves.
+#
+# Required repository variables (Settings -> Secrets and variables -> Actions -> Variables):
+#   AWS_REGION, AWS_DEPLOY_ROLE_ARN (OIDC role for GitHub), ECR_REPOSITORY,
+#   AGENTCORE_RUNTIME_NAME, AGENTCORE_EXECUTION_ROLE_ARN, BEDROCK_MODEL_ID, TENANTS_SECRET_ID
+name: ci-cd
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # GitHub OIDC -> AWS, no long-lived keys
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - name: Lint
+        run: ruff check . && ruff format --check .
+      - name: Unit tests
+        run: pytest -q
+      - name: Golden eval (offline, mock LLM)
+        run: LLM_PROVIDER=mock python scripts/evaluate.py --target inprocess
+      - name: Container smoke test (docker compose, mock LLM)
+        run: |
+          docker compose up --build -d
+          for i in $(seq 1 30); do curl -sf localhost:8080/ping && break; sleep 2; done
+          python scripts/evaluate.py --target http://localhost:8080
+          docker compose logs agent | tail -20
+      - if: always()
+        run: docker compose down
+
+  build:
+    if: github.event_name != 'pull_request'
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      image_uri: ${{ steps.meta.outputs.image_uri }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - id: meta
+        run: echo "image_uri=${{ steps.ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+      # AgentCore Runtime runs linux/arm64 containers.
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.image_uri }}
+          build-args: AGENT_VERSION=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+  deploy-staging:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: staging
+    outputs:
+      runtime_version: ${{ steps.deploy.outputs.runtime_version }}
+      runtime_arn: ${{ steps.deploy.outputs.runtime_arn }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install boto3
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Create new AgentCore runtime version and point "staging" at it
+        id: deploy
+        run: |
+          python scripts/agentcore_deploy.py deploy \
+            --runtime-name "${{ vars.AGENTCORE_RUNTIME_NAME }}" \
+            --image-uri "${{ needs.build.outputs.image_uri }}" \
+            --role-arn "${{ vars.AGENTCORE_EXECUTION_ROLE_ARN }}" \
+            --endpoint staging \
+            --note "sha=${GITHUB_SHA::7}" \
+            --env AGENT_VERSION=${{ github.sha }} \
+            --env LLM_PROVIDER=bedrock \
+            --env BEDROCK_MODEL_ID=${{ vars.BEDROCK_MODEL_ID }} \
+            --env AWS_REGION=${{ vars.AWS_REGION }} \
+            --env TENANTS_SECRET_ID=${{ vars.TENANTS_SECRET_ID }} \
+            --env DEFAULT_PROMPT_VERSION=v1
+      - name: Golden eval against staging (real Bedrock) - blocks promotion on regressions
+        run: |
+          python scripts/evaluate.py \
+            --target "${{ steps.deploy.outputs.runtime_arn }}" --qualifier staging \
+            --min-precision 0.9 --min-recall 0.9
+
+  deploy-prod:
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment: production # configure "Required reviewers" on this environment = manual gate
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install boto3
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Promote the exact staging-tested version to "prod"
+        run: |
+          python scripts/agentcore_deploy.py promote \
+            --runtime-name "${{ vars.AGENTCORE_RUNTIME_NAME }}" \
+            --endpoint prod \
+            --version "${{ needs.deploy-staging.outputs.runtime_version }}" \
+            --note "sha=${GITHUB_SHA::7}"
+      - name: Prod smoke test (dry run - never pages the risk team)
+        run: |
+          python scripts/evaluate.py \
+            --target "${{ needs.deploy-staging.outputs.runtime_arn }}" --qualifier prod
+      - name: Auto-rollback if the prod smoke test fails
+        if: failure()
+        run: |
+          python scripts/agentcore_deploy.py rollback \
+            --runtime-name "${{ vars.AGENTCORE_RUNTIME_NAME }}" --endpoint prod
