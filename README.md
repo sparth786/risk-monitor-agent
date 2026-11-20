@@ -178,7 +178,10 @@ The headers are `X-Risk-Signature: sha256=<hmac>`, `X-Risk-Timestamp`, `X-Idempo
    - `agentcore_deploy.py deploy` creates a **new immutable runtime version** and points the
      **`staging` endpoint** at it.
    - Run the golden eval against `staging` on **real Bedrock**. If precision or recall falls below
-     0.9, the pipeline stops.
+     0.9, the pipeline stops. If the model is unreachable and the agent falls back to its rules, the
+     run gets a ⚠️ "LLM not used" warning but is not failed. To make that case fatal too, set the
+     repo variable `EVAL_REQUIRE_MODE=llm`, so prod can only receive versions the LLM has been
+     evaluated on.
    - **Manual approval:** the GitHub environment `production` has required reviewers.
    - `promote` moves the **`prod` endpoint** to the exact version tested in staging, then runs a
      prod smoke test (dry run). If the smoke test fails, the pipeline rolls back automatically.
@@ -213,6 +216,14 @@ Lambda function behind a public HTTPS function URL:
 - IAM: `infra/iam/receiver-role-*.json` plus the AWS-managed `AWSLambdaBasicExecutionRole`.
 
 Each tenant's `webhook_url` in the tenant secret is `https://<function-url>/hooks/<tenant_id>`.
+
+- **Sizing.** Give the function 512 MB, which also buys it more CPU. At 128 MB a cold start (loading
+  boto3 plus fetching the secret) took about 5.7 s, which is past the agent's 5 s webhook timeout, so the
+  agent retried. At 512 MB a cold start takes about 1.3 s and a warm call about 2 ms.
+- **Delivery is at least once.** A timeout or a 5xx triggers a retry, so the same alert can arrive more
+  than once. Every attempt carries the same `X-Idempotency-Key`, which is `{request_id}:{sorted txn ids}`.
+  A production consumer should de-duplicate on that key, for example with a DynamoDB conditional put.
+  This demo receiver only logs it.
 
 ## Deploying to AWS
 

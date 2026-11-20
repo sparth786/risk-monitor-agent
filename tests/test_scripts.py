@@ -172,3 +172,19 @@ def test_require_mode_rejects_rules_fallback(monkeypatch):
         assert evaluate.main(["--target", "inprocess", "--require-mode", "llm"]) == 1
     finally:
         main.set_service(None)
+
+
+def test_rules_fallback_passes_with_warning_by_default(monkeypatch, capsys):
+    from app import main
+    from tests.fakes import FailingAnalyzer
+
+    monkeypatch.setenv("LLM_PROVIDER", "mock")
+    service = main.build_service()
+    service.monitor.analyzer = FailingAnalyzer()  # LLM down -> agent degrades to rules
+    main.set_service(service)
+    try:
+        assert evaluate.main(["--target", "inprocess"]) == 0
+        assert "::warning title=LLM not used::" in capsys.readouterr().out
+        assert evaluate.main(["--target", "inprocess", "--require-mode", "llm"]) == 1
+    finally:
+        main.set_service(None)

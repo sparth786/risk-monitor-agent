@@ -123,6 +123,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.require_mode != "any" and metrics["modes"] != [args.require_mode]:
         print(f"analysis_mode {metrics['modes']} != required '{args.require_mode}' (is the LLM reachable?)", file=sys.stderr)
         ok = False
+    elif "rules_fallback" in metrics["modes"]:
+        # Not fatal, but never silent: GitHub Actions renders this as a warning annotation on the run.
+        print(
+            f"::warning title=LLM not used::eval ran in {metrics['modes']}; the LLM was unreachable and the rules "
+            "fallback was scored. Set EVAL_REQUIRE_MODE=llm to make this fatal.",
+        )
     print("EVAL PASSED" if ok else "EVAL FAILED", file=sys.stderr)
     return 0 if ok else 1
 
