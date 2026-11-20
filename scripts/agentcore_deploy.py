@@ -104,8 +104,6 @@ def runtime_spec(args) -> dict:
         "networkConfiguration": {"networkMode": "PUBLIC"},
         "protocolConfiguration": {"serverProtocol": "HTTP"},
         "environmentVariables": parse_env(args.env),
-        # Forward the bearer token to the container so it can read the tenant claim.
-        "requestHeaderConfiguration": {"requestHeaderAllowlist": ["Authorization"]},
     }
     if args.jwt_discovery_url:
         jwt = {"discoveryUrl": args.jwt_discovery_url}
@@ -114,6 +112,10 @@ def runtime_spec(args) -> dict:
         if args.jwt_audience:
             jwt["allowedAudience"] = args.jwt_audience
         spec["authorizerConfiguration"] = {"customJWTAuthorizer": jwt}
+        # Forward the bearer token so the container can read the tenant claim. AgentCore only
+        # allows this with a JWT authorizer; with IAM (SigV4) auth the caller's IAM identity
+        # is the trust boundary and the tenant comes from the payload.
+        spec["requestHeaderConfiguration"] = {"requestHeaderAllowlist": ["Authorization"]}
     return spec
 
 

@@ -221,6 +221,13 @@ The deployment tooling is ready: `scripts/agentcore_deploy.py`, the IAM template
 the tenants secret and a GitHub OIDC role. Then push the image and run
 `agentcore_deploy.py deploy`. A full step-by-step guide is provided separately.
 
+> **OIDC `sub` format.** GitHub may issue `sub` claims that carry immutable IDs, in the form
+> `repo:OWNER@OWNER_ID/REPO@REPO_ID:ref:refs/heads/main`. The trust template accepts both
+> this form and the legacy `repo:OWNER/REPO:...` form. If `configure-aws-credentials` fails
+> with "Not authorized to perform sts:AssumeRoleWithWebIdentity", look up the failed
+> `AssumeRoleWithWebIdentity` event in CloudTrail. Its `userIdentity.userName` is the exact
+> `sub` that GitHub sent.
+
 ## Tests
 
 ```bash
