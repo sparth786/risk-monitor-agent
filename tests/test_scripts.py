@@ -83,7 +83,7 @@ def test_deploy_promote_rollback_flow():
     spec = c.calls[0][1]
     assert spec["agentRuntimeArtifact"]["containerConfiguration"]["containerUri"] == "repo:sha1"
     assert spec["environmentVariables"] == {"AGENT_VERSION": "sha1"}
-    assert spec["requestHeaderConfiguration"]["requestHeaderAllowlist"] == ["Authorization"]
+    assert "requestHeaderConfiguration" not in spec  # AgentCore rejects it without a JWT authorizer
 
     run(c, "promote", "--runtime-name", "risk_monitor", "--endpoint", "prod", "--version", "1")
     # A prompt/config change = new image or env -> new immutable version, staging moves, prod doesn't.
@@ -127,6 +127,7 @@ def test_jwt_authorizer_config():
     )
     spec = dep.runtime_spec(args)
     assert spec["authorizerConfiguration"]["customJWTAuthorizer"]["allowedClients"] == ["client-a"]
+    assert spec["requestHeaderConfiguration"]["requestHeaderAllowlist"] == ["Authorization"]
 
 
 def test_failed_status_aborts():
