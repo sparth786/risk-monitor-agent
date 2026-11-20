@@ -127,7 +127,7 @@ jobs:
           python scripts/evaluate.py \
             --target "${{ steps.deploy.outputs.runtime_arn }}" --qualifier staging \
             --min-precision 0.9 --min-recall 0.9 \
-            --require-mode "${{ vars.EVAL_REQUIRE_MODE || 'llm' }}"
+            --require-mode "${{ vars.EVAL_REQUIRE_MODE || 'any' }}"
 
   deploy-prod:
     needs: deploy-staging

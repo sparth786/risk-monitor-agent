@@ -178,7 +178,10 @@ The headers are `X-Risk-Signature: sha256=<hmac>`, `X-Risk-Timestamp`, `X-Idempo
    - `agentcore_deploy.py deploy` creates a **new immutable runtime version** and points the
      **`staging` endpoint** at it.
    - Run the golden eval against `staging` on **real Bedrock**. If precision or recall falls below
-     0.9, the pipeline stops.
+     0.9, the pipeline stops. If the model is unreachable and the agent falls back to its rules, the
+     run gets a ⚠️ "LLM not used" warning but is not failed. To make that case fatal too, set the
+     repo variable `EVAL_REQUIRE_MODE=llm`, so prod can only receive versions the LLM has been
+     evaluated on.
    - **Manual approval:** the GitHub environment `production` has required reviewers.
    - `promote` moves the **`prod` endpoint** to the exact version tested in staging, then runs a
      prod smoke test (dry run). If the smoke test fails, the pipeline rolls back automatically.
