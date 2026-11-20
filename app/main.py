@@ -42,7 +42,9 @@ def build_service(settings: Settings | None = None) -> Service:
     if settings.llm_provider == "mock":
         analyzer = MockAnalyzer()
     elif settings.llm_provider == "bedrock":
-        analyzer = StrandsBedrockAnalyzer(settings.model_id, settings.aws_region, settings.max_tokens)
+        analyzer = StrandsBedrockAnalyzer(
+            settings.model_id, settings.aws_region, settings.max_tokens, temperature=settings.temperature
+        )
     else:
         raise ValueError(f"unknown LLM_PROVIDER '{settings.llm_provider}'")
     webhook = WebhookClient(

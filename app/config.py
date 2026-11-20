@@ -26,9 +26,10 @@ def _bool(name: str, default: bool) -> bool:
 @dataclass(frozen=True)
 class Settings:
     llm_provider: str = "bedrock"  # "bedrock" | "mock"
-    model_id: str = "us.anthropic.claude-opus-5-5"
+    model_id: str = "us.amazon.nova-pro-v1:0"
     aws_region: str = "us-east-1"
-    max_tokens: int = 16000
+    max_tokens: int = 4096  # Nova Pro output limit is lower than Claude's; raise for other models
+    temperature: float | None = None  # set 0 for Nova (greedy = reliable tool calls); leave unset for Claude
     agent_version: str = "dev"
     default_prompt_version: str = "v1"
     # Tenant config source (first one set wins): Secrets Manager -> inline JSON -> file.
@@ -54,6 +55,7 @@ class Settings:
             model_id=os.getenv("BEDROCK_MODEL_ID", cls.model_id),
             aws_region=os.getenv("AWS_REGION", os.getenv("AWS_DEFAULT_REGION", cls.aws_region)),
             max_tokens=int(os.getenv("MAX_TOKENS", cls.max_tokens)),
+            temperature=float(os.environ["TEMPERATURE"]) if os.getenv("TEMPERATURE") else None,
             agent_version=os.getenv("AGENT_VERSION", cls.agent_version),
             default_prompt_version=os.getenv("DEFAULT_PROMPT_VERSION", cls.default_prompt_version),
             tenants_secret_id=os.getenv("TENANTS_SECRET_ID") or None,

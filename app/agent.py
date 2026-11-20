@@ -42,10 +42,11 @@ class StrandsBedrockAnalyzer:
 
     mode = "llm"
 
-    def __init__(self, model_id: str, region: str, max_tokens: int = 16000, model=None):
+    def __init__(self, model_id: str, region: str, max_tokens: int = 4096, model=None, temperature: float | None = None):
         self.model_id = model_id
         self.region = region
         self.max_tokens = max_tokens
+        self.temperature = temperature
         self._model = model  # injectable (tests pass a scripted fake Strands model)
 
     def _build_model(self):
@@ -53,8 +54,10 @@ class StrandsBedrockAnalyzer:
             return self._model
         from strands.models.bedrock import BedrockModel
 
-        # No temperature/top_p: current Claude models on Bedrock reject sampling params.
-        return BedrockModel(model_id=self.model_id, region_name=self.region, max_tokens=self.max_tokens)
+        # Temperature is only sent when configured: Nova recommends 0 (greedy) for tool use,
+        # while current Claude models on Bedrock reject sampling params entirely.
+        extra = {"temperature": self.temperature} if self.temperature is not None else {}
+        return BedrockModel(model_id=self.model_id, region_name=self.region, max_tokens=self.max_tokens, **extra)
 
     def assess(self, *, system_prompt, user_prompt, tools, transactions, signals) -> RiskAssessment:
         from strands import Agent

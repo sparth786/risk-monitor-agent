@@ -109,11 +109,20 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--min-precision", type=float, default=0.9)
     p.add_argument("--min-recall", type=float, default=0.9)
     p.add_argument("--token", help="bearer token (when the runtime uses JWT auth)")
+    p.add_argument(
+        "--require-mode",
+        default="any",
+        help="fail unless every case ran in this analysis_mode (e.g. 'llm', so a rules fallback can't pass an LLM gate)",
+    )
     args = p.parse_args(argv)
 
-    metrics, _ = run(args.target, Path(args.dataset), args.qualifier, args.token)
+    metrics, results = run(args.target, Path(args.dataset), args.qualifier, args.token)
+    metrics["modes"] = sorted({r.get("analysis_mode") or "unknown" for r in results})
     print(json.dumps(metrics, indent=2))
     ok = metrics["precision"] >= args.min_precision and metrics["recall"] >= args.min_recall
+    if args.require_mode != "any" and metrics["modes"] != [args.require_mode]:
+        print(f"analysis_mode {metrics['modes']} != required '{args.require_mode}' (is the LLM reachable?)", file=sys.stderr)
+        ok = False
     print("EVAL PASSED" if ok else "EVAL FAILED", file=sys.stderr)
     return 0 if ok else 1
 

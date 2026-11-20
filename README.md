@@ -34,7 +34,7 @@ The answers to the written questions are in **[ANSWERS.md](ANSWERS.md)**.
 ## How it works
 
 - **The LLM reasons; code guarantees.** Deterministic signals are added to the prompt as hints.
-  The LLM (Claude on Bedrock through Strands' `BedrockModel`) decides what is suspicious, calls
+  The LLM (Amazon Nova Pro by default, or any Bedrock model with tool use, via Strands' `BedrockModel`) decides what is suspicious, calls
   `notify_risk_team`, and returns a typed `RiskAssessment`. Code then drops any IDs the model
   made up, removes duplicate alerts, and sends any severe finding the model forgot to alert on.
 - **It degrades instead of failing.** If Bedrock errors (throttling or an outage), the request
@@ -60,12 +60,13 @@ The answers to the written questions are in **[ANSWERS.md](ANSWERS.md)**.
 | `app/prompts/` | Versioned system prompts |
 | `app/tenants.py`, `app/config.py` | Tenant registry (file / env / Secrets Manager), env-driven settings |
 | `config/tenants.example.json` | Two demo tenants (`acme`, `globex`) |
-| `mock_webhook/server.py` | Local webhook receiver that verifies signatures |
+| `mock_webhook/server.py` | Local webhook receiver that verifies signatures (docker-compose) |
+| `receiver/lambda_function.py` | Risk-team webhook receiver on AWS Lambda (function URL): verifies each tenant's HMAC, rejects replays |
 | `scripts/agentcore_deploy.py` | Deploy / promote / rollback / status on AgentCore (boto3) |
 | `scripts/evaluate.py`, `evals/golden.json` | Golden-set eval and smoke test with precision/recall gate |
 | `.github/workflows/ci-cd.yml`, `rollback.yml` | CI/CD pipeline and one-click rollback |
 | `infra/iam/` | IAM policy templates (AgentCore execution role, GitHub OIDC deploy role) |
-| `tests/` | 70 tests (unit, real Strands loop with a scripted model, HTTP, isolation, deploy tooling) |
+| `tests/` | 79 tests (unit, real Strands loop with a scripted model, HTTP, isolation, deploy tooling) |
 
 ## Local setup
 
@@ -80,6 +81,7 @@ make eval               # golden-set eval in-process with the mock LLM
 ### Run with Docker Compose
 
 ```bash
+mkdir -p ~/.aws                       # compose mounts it; if missing, Docker creates it owned by root
 docker compose up --build -d          # offline: LLM_PROVIDER=mock (rules engine stands in for the LLM)
 curl -s -X POST localhost:8080/invocations \
   -H 'Content-Type: application/json' -d @scripts/sample_transactions.json | python3 -m json.tool
@@ -93,7 +95,7 @@ access:
 
 ```bash
 LLM_PROVIDER=bedrock AWS_PROFILE=default AWS_REGION=us-east-1 \
-BEDROCK_MODEL_ID=us.anthropic.claude-opus-5-5 docker compose up --build -d
+BEDROCK_MODEL_ID=us.amazon.nova-pro-v1:0 docker compose up --build -d
 ```
 
 > Check the exact model / inference-profile ID in the Bedrock console (Model catalog, or
@@ -124,7 +126,7 @@ Response:
 ```json
 {
   "request_id": "...", "tenant_id": "acme", "agent_version": "<git sha>",
-  "prompt_version": "v1", "model_id": "us.anthropic.claude-opus-5-5", "analysis_mode": "llm",
+  "prompt_version": "v1", "model_id": "us.amazon.nova-pro-v1:0", "analysis_mode": "llm",
   "transactions_analyzed": 9, "flagged_count": 2,
   "findings": [{"transaction_id": "t-004", "customer_id": "cust-17", "risk_score": 92,
                 "severity": "critical", "reasons": ["..."]}],
@@ -152,7 +154,9 @@ The headers are `X-Risk-Signature: sha256=<hmac>`, `X-Risk-Timestamp`, `X-Idempo
 | Variable | Default | Meaning |
 |---|---|---|
 | `LLM_PROVIDER` | `bedrock` | `bedrock` or `mock` (offline) |
-| `BEDROCK_MODEL_ID` | `us.anthropic.claude-opus-5-5` | Bedrock model / inference profile |
+| `BEDROCK_MODEL_ID` | `us.amazon.nova-pro-v1:0` | Bedrock model / inference profile (any Converse model with tool use) |
+| `MAX_TOKENS` | `4096` | Max output tokens (Nova Pro's limit is lower than Claude's) |
+| `TEMPERATURE` | unset | Set `0` for Nova; leave unset for Claude (it rejects sampling params) |
 | `AWS_REGION` | `us-east-1` | Bedrock region |
 | `AGENT_VERSION` | `dev` | Set to the git SHA at build time |
 | `DEFAULT_PROMPT_VERSION` | `v1` | Used if a tenant doesn't pin one |
@@ -196,6 +200,20 @@ Required GitHub repository variables: `AWS_REGION`, `AWS_DEPLOY_ROLE_ARN`, `ECR_
 `TENANTS_SECRET_ID`. Also create the GitHub environments `staging` and `production` (with
 required reviewers on `production`).
 
+## Webhook receiver on AWS
+
+`receiver/lambda_function.py` plays the customers' risk-team endpoint in AWS. It runs as a
+Lambda function behind a public HTTPS function URL:
+
+- `POST /hooks/{tenant_id}` verifies `X-Risk-Signature` with **that tenant's** secret, read from the
+  same `risk-monitor/tenants` secret the agent uses. It rejects tampered bodies, the wrong
+  tenant's secret, cross-tenant payloads and timestamps older than 5 minutes (replays), and
+  logs each accepted alert as one JSON line to CloudWatch (`/aws/lambda/risk-monitor-webhook-receiver`).
+- `GET /health` returns `{"ok": true}`.
+- IAM: `infra/iam/receiver-role-*.json` plus the AWS-managed `AWSLambdaBasicExecutionRole`.
+
+Each tenant's `webhook_url` in the tenant secret is `https://<function-url>/hooks/<tenant_id>`.
+
 ## Deploying to AWS
 
 The deployment tooling is ready: `scripts/agentcore_deploy.py`, the IAM templates in
@@ -206,7 +224,7 @@ the tenants secret and a GitHub OIDC role. Then push the image and run
 ## Tests
 
 ```bash
-make test   # 70 tests, ~1s, no network/AWS
+make test   # 79 tests, ~1s, no network/AWS
 ```
 
 The tests cover:

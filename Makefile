@@ -15,6 +15,7 @@ eval:  ## golden-set eval in-process (mock unless LLM_PROVIDER=bedrock)
 	LLM_PROVIDER=$${LLM_PROVIDER:-mock} $(PY) scripts/evaluate.py --target inprocess
 
 up:
+	mkdir -p $(HOME)/.aws  # create as your user; Docker would create it as root
 	docker compose up --build -d
 
 down:
