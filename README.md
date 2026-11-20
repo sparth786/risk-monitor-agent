@@ -7,6 +7,23 @@ runs locally with Docker Compose.
 
 The answers to the written questions are in **[ANSWERS.md](ANSWERS.md)**.
 
+## Deployed endpoint
+
+| | |
+|---|---|
+| Runtime | AgentCore `risk_monitor` in `ap-south-1`, endpoints `staging` and `prod` |
+| Auth | IAM (SigV4). The caller needs `bedrock-agentcore:InvokeAgentRuntime` |
+| Status | Live. LLM calls are blocked at the AWS account level (Bedrock Error 002), so responses currently report `analysis_mode: rules_fallback`. The agent degrades to its rules engine and still flags and alerts |
+
+```bash
+aws bedrock-agentcore invoke-agent-runtime --region ap-south-1 \
+  --agent-runtime-arn "<runtime ARN>" --qualifier prod \
+  --runtime-session-id "demo-$(uuidgen)" --content-type application/json \
+  --payload fileb://scripts/sample_transactions.json out.json && cat out.json
+```
+
+The runtime ARN is printed by the `deploy-staging` job and shown in the AgentCore console.
+
 ```
            POST /invocations  {tenant_id, transactions[]}
                     |
