@@ -34,7 +34,7 @@ The answers to the written questions are in **[ANSWERS.md](ANSWERS.md)**.
 ## How it works
 
 - **The LLM reasons; code guarantees.** Deterministic signals are added to the prompt as hints.
-  The LLM (Claude on Bedrock through Strands' `BedrockModel`) decides what is suspicious, calls
+  The LLM (Amazon Nova Pro by default, or any Bedrock model with tool use, via Strands' `BedrockModel`) decides what is suspicious, calls
   `notify_risk_team`, and returns a typed `RiskAssessment`. Code then drops any IDs the model
   made up, removes duplicate alerts, and sends any severe finding the model forgot to alert on.
 - **It degrades instead of failing.** If Bedrock errors (throttling or an outage), the request
@@ -80,6 +80,7 @@ make eval               # golden-set eval in-process with the mock LLM
 ### Run with Docker Compose
 
 ```bash
+mkdir -p ~/.aws                       # compose mounts it; if missing, Docker creates it owned by root
 docker compose up --build -d          # offline: LLM_PROVIDER=mock (rules engine stands in for the LLM)
 curl -s -X POST localhost:8080/invocations \
   -H 'Content-Type: application/json' -d @scripts/sample_transactions.json | python3 -m json.tool
@@ -93,7 +94,7 @@ access:
 
 ```bash
 LLM_PROVIDER=bedrock AWS_PROFILE=default AWS_REGION=us-east-1 \
-BEDROCK_MODEL_ID=us.anthropic.claude-opus-5-5 docker compose up --build -d
+BEDROCK_MODEL_ID=us.amazon.nova-pro-v1:0 docker compose up --build -d
 ```
 
 > Check the exact model / inference-profile ID in the Bedrock console (Model catalog, or
@@ -124,7 +125,7 @@ Response:
 ```json
 {
   "request_id": "...", "tenant_id": "acme", "agent_version": "<git sha>",
-  "prompt_version": "v1", "model_id": "us.anthropic.claude-opus-5-5", "analysis_mode": "llm",
+  "prompt_version": "v1", "model_id": "us.amazon.nova-pro-v1:0", "analysis_mode": "llm",
   "transactions_analyzed": 9, "flagged_count": 2,
   "findings": [{"transaction_id": "t-004", "customer_id": "cust-17", "risk_score": 92,
                 "severity": "critical", "reasons": ["..."]}],
@@ -152,7 +153,9 @@ The headers are `X-Risk-Signature: sha256=<hmac>`, `X-Risk-Timestamp`, `X-Idempo
 | Variable | Default | Meaning |
 |---|---|---|
 | `LLM_PROVIDER` | `bedrock` | `bedrock` or `mock` (offline) |
-| `BEDROCK_MODEL_ID` | `us.anthropic.claude-opus-5-5` | Bedrock model / inference profile |
+| `BEDROCK_MODEL_ID` | `us.amazon.nova-pro-v1:0` | Bedrock model / inference profile (any Converse model with tool use) |
+| `MAX_TOKENS` | `4096` | Max output tokens (Nova Pro's limit is lower than Claude's) |
+| `TEMPERATURE` | unset | Set `0` for Nova; leave unset for Claude (it rejects sampling params) |
 | `AWS_REGION` | `us-east-1` | Bedrock region |
 | `AGENT_VERSION` | `dev` | Set to the git SHA at build time |
 | `DEFAULT_PROMPT_VERSION` | `v1` | Used if a tenant doesn't pin one |

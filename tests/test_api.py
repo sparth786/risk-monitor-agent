@@ -182,3 +182,19 @@ def test_duplicate_tenants_rejected():
     t = {"tenant_id": "ok", "webhook_url": "https://x.example", "webhook_secret": "s" * 16}
     with pytest.raises(ValueError):
         TenantRegistry.from_data([t, t])
+
+
+def test_bedrock_model_config_for_nova(monkeypatch):
+    """Nova: temperature 0 is sent; Claude-style config (unset) sends no sampling params."""
+    from app.agent import StrandsBedrockAnalyzer
+
+    monkeypatch.setenv("TEMPERATURE", "0")
+    monkeypatch.setenv("MAX_TOKENS", "4096")
+    s = Settings.from_env()
+    assert s.model_id == "us.amazon.nova-pro-v1:0" and s.temperature == 0.0 and s.max_tokens == 4096
+    analyzer = main.build_service(s).monitor.analyzer
+    cfg = analyzer._build_model().get_config()
+    assert cfg["model_id"] == "us.amazon.nova-pro-v1:0" and cfg["temperature"] == 0.0 and cfg["max_tokens"] == 4096
+
+    unset = StrandsBedrockAnalyzer("us.anthropic.claude-x", "us-east-1")._build_model().get_config()
+    assert "temperature" not in unset

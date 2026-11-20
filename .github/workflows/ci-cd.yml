@@ -117,6 +117,8 @@ jobs:
             --env AGENT_VERSION=${{ github.sha }} \
             --env LLM_PROVIDER=bedrock \
             --env BEDROCK_MODEL_ID=${{ vars.BEDROCK_MODEL_ID }} \
+            --env TEMPERATURE=0 \
+            --env MAX_TOKENS=4096 \
             --env AWS_REGION=${{ vars.AWS_REGION }} \
             --env TENANTS_SECRET_ID=${{ vars.TENANTS_SECRET_ID }} \
             --env DEFAULT_PROMPT_VERSION=v1
