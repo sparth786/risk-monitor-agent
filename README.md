@@ -60,12 +60,13 @@ The answers to the written questions are in **[ANSWERS.md](ANSWERS.md)**.
 | `app/prompts/` | Versioned system prompts |
 | `app/tenants.py`, `app/config.py` | Tenant registry (file / env / Secrets Manager), env-driven settings |
 | `config/tenants.example.json` | Two demo tenants (`acme`, `globex`) |
-| `mock_webhook/server.py` | Local webhook receiver that verifies signatures |
+| `mock_webhook/server.py` | Local webhook receiver that verifies signatures (docker-compose) |
+| `receiver/lambda_function.py` | Risk-team webhook receiver on AWS Lambda (function URL): verifies each tenant's HMAC, rejects replays |
 | `scripts/agentcore_deploy.py` | Deploy / promote / rollback / status on AgentCore (boto3) |
 | `scripts/evaluate.py`, `evals/golden.json` | Golden-set eval and smoke test with precision/recall gate |
 | `.github/workflows/ci-cd.yml`, `rollback.yml` | CI/CD pipeline and one-click rollback |
 | `infra/iam/` | IAM policy templates (AgentCore execution role, GitHub OIDC deploy role) |
-| `tests/` | 70 tests (unit, real Strands loop with a scripted model, HTTP, isolation, deploy tooling) |
+| `tests/` | 79 tests (unit, real Strands loop with a scripted model, HTTP, isolation, deploy tooling) |
 
 ## Local setup
 
@@ -199,6 +200,20 @@ Required GitHub repository variables: `AWS_REGION`, `AWS_DEPLOY_ROLE_ARN`, `ECR_
 `TENANTS_SECRET_ID`. Also create the GitHub environments `staging` and `production` (with
 required reviewers on `production`).
 
+## Webhook receiver on AWS
+
+`receiver/lambda_function.py` plays the customers' risk-team endpoint in AWS. It runs as a
+Lambda function behind a public HTTPS function URL:
+
+- `POST /hooks/{tenant_id}` verifies `X-Risk-Signature` with **that tenant's** secret, read from the
+  same `risk-monitor/tenants` secret the agent uses. It rejects tampered bodies, the wrong
+  tenant's secret, cross-tenant payloads and timestamps older than 5 minutes (replays), and
+  logs each accepted alert as one JSON line to CloudWatch (`/aws/lambda/risk-monitor-webhook-receiver`).
+- `GET /health` returns `{"ok": true}`.
+- IAM: `infra/iam/receiver-role-*.json` plus the AWS-managed `AWSLambdaBasicExecutionRole`.
+
+Each tenant's `webhook_url` in the tenant secret is `https://<function-url>/hooks/<tenant_id>`.
+
 ## Deploying to AWS
 
 The deployment tooling is ready: `scripts/agentcore_deploy.py`, the IAM templates in
@@ -209,7 +224,7 @@ the tenants secret and a GitHub OIDC role. Then push the image and run
 ## Tests
 
 ```bash
-make test   # 70 tests, ~1s, no network/AWS
+make test   # 79 tests, ~1s, no network/AWS
 ```
 
 The tests cover:
